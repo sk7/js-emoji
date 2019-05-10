@@ -1,18 +1,47 @@
 {
-  "name": "js-emoji",
-  "version": "1.0.0",
+  "name": "grape-js-emoji2",
+  "version": "3.4.0",
   "description": "A JS Emoji conversion library",
-  "main": "emoji.js",
-  "styles": [ "emoji.css" ],
-  "images": [
-    "images/sheet_16.png",
-    "images/sheet_32.png",
-    "images/sheet_64.png"
+  "main": "lib/emoji.js",
+  "files": [
+    "LICENSE",
+    "README.md",
+    "CHANGES.md",
+    "lib"
   ],
+  "dependencies": {
+    "emoji-datasource": "4.0.0"
+  },
+  "devDependencies": {
+    "grunt": "~1.0.1",
+    "grunt-contrib-uglify": "~1.0.1",
+    "grunt-karma": "~0.12.2",
+    "grunt-karma-coveralls": "^2.5.3",
+    "grunt-shell": "^1.1.2",
+    "jasmine-core": "~2.4.1",
+    "karma": "~0.13.22",
+    "karma-chrome-launcher": "~0.2.0",
+    "karma-coverage": "~0.5.5",
+    "karma-jasmine": "~0.3.5",
+    "karma-phantomjs-launcher": "~1.0.0",
+    "karma-story-reporter": "^0.3.1",
+    "phantomjs-prebuilt": "~2.1.7"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/sk7/js-emoji.git"
+    "url": "git://github.com/iamcal/js-emoji.git"
   },
-  "author": "sk7",
-  "license": "ISC"
+  "keywords": [
+    "emoji",
+    "emoticon",
+    "mobile",
+    "browser",
+    "js"
+  ],
+  "author": "Cal Henderson <cal@iamcal.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/iamcal/js-emoji/issues"
+  },
+  "homepage": "https://github.com/iamcal/js-emoji"
 }

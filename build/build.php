@@ -1,6 +1,23 @@
-<?
-	$in = file_get_contents('emoji-data/emoji.json');
+<?php
+	error_reporting(E_ALL & ~E_NOTICE);
+
+	$dir = dirname(__FILE__);
+	$in = file_get_contents($dir.'/emoji-data/emoji.json');
 	$d = json_decode($in, true);
+
+
+	#
+	# bit masks for various sets
+	#
+
+	$set_masks = array(
+		'apple'		=> 1,
+		'google'	=> 2,
+		'twitter'	=> 4,
+		'emojione'	=> 8,
+		'facebook'	=> 16,
+		'messenger'	=> 32,
+	);
 
 
 	#
@@ -8,8 +25,12 @@
 	#
 
 	$out = array();
+	$vars_out = array();
+	$text_out = array();
+	$obsoletes = array();
 
 	foreach ($d as $row){
+
 		list($key) = explode('.', $row['image']);
 		$out[$key] = array(
 			array(calc_bytes($row['unified'])),
@@ -18,16 +39,105 @@
 			$row['short_names'],
 			$row['sheet_x'],
 			$row['sheet_y'],
+			calc_img_has($row),
+			0,
 		);
-		if ($row['text']) $out[$key][] = $row['text'];
-		if (count($row['variations'])){
-			foreach ($row['variations'] as $var){
-				array_unshift($out[$key][0], calc_bytes($var));
+		if ($row['text']){
+			$out[$key][] = $row['text'];
+		}
+		if (count($row['texts'])){
+			foreach ($row['texts'] as $txt){
+				$text_out[$txt] = $row['short_name'];
+			}
+		}
+		if ($row['non_qualified']){
+			$out[$key][0][] = calc_bytes($row['non_qualified']);
+		}
+		if (count($row['skin_variations'])){
+
+			foreach ($row['skin_variations'] as $k2 => $row2){
+
+				list($sub_key) = explode('.', $row2['image']);
+
+				$vars_out[$key][StrToLower($k2)] = array(
+					$sub_key,
+					$row2['sheet_x'],
+					$row2['sheet_y'],
+					calc_img_has($row2),
+					array(calc_bytes($row2['unified'])),
+				);
+			}
+		}
+
+		if ($row['obsoleted_by']){
+			$new_key = StrToLower($row['obsoleted_by']);
+			$obsoletes[$key] = $new_key;
+		}
+	}
+
+
+	#
+	# build the obsoletes map
+	#
+	# new_key => [old_key, sheet_x, sheet_y, bit_mask]
+	#
+
+	$obs_map = array();
+
+	foreach ($obsoletes as $old_key => $new_key){
+
+		$obs_map[$new_key] = array(
+			$old_key,
+			$out[$old_key][4],
+			$out[$old_key][5],
+			$out[$old_key][6],
+		);
+
+		if (is_array($vars_out[$old_key])){
+			foreach ($vars_out[$old_key] as $k => $old_row){
+
+				$new_row = $vars_out[$new_key][$k];
+
+				$obs_map[$new_row[0]] = array(
+					$old_row[0],
+					$old_row[1],
+					$old_row[2],
+					$old_row[3],
+				);
 			}
 		}
 	}
 
+
+	#
+	# merge obsoletes with their new versions
+	#
+
+	foreach ($obsoletes as $old_key => $new_key){
+
+		$out[$new_key][0] = array_unique(array_merge($out[$new_key][0], $out[$old_key][0])); # codepoints
+		$out[$new_key][3] = array_unique(array_merge($out[$new_key][3], $out[$old_key][3])); # shortnames
+
+		if (is_array($vars_out[$new_key])){
+			foreach ($vars_out[$new_key] as $k => $v){
+				# this might not be defined. in some cases a non-skin-tone
+				# emoji was replaced with a new skin-tone aware version
+				if (is_array($vars_out[$old_key][$k][4])){
+					$vars_out[$new_key][$k][4] = array_unique(array_merge($vars_out[$new_key][$k][4], $vars_out[$old_key][$k][4]));
+				}
+			}
+		}
+
+
+		unset($out[$old_key]);
+		unset($vars_out[$old_key]);
+	}
+
+
 	$json = pretty_print_json($out);
+	$json_vars = pretty_print_json($vars_out);
+	$json_text = pretty_print_json($text_out);
+	$obs_map = pretty_print_json($obs_map);
 
 
 	#
@@ -40,34 +150,45 @@
 
 		$max = max($max, $row['sheet_x']);
 		$max = max($max, $row['sheet_y']);
-	}
 
-	$sheet_size = $max + 1;;
-
-
-	#
-	# build the emoticons mapping
-	#
-
-	$lines = file('emoji-data/build/catalog_text_toemoji.txt');
-	$text = array();
-	foreach ($lines as $line){
-		$line = trim($line);
-		if (strlen($line)){
-			$bits = preg_split('!\s+!', $line, 2);
-			$text[$bits[0]] = $bits[1];
+		if (count($row['skin_variations'])){
+			foreach ($row['skin_variations'] as $row2){
+				$max = max($max, $row2['sheet_x']);
+				$max = max($max, $row2['sheet_y']);
+			}
 		}
 	}
 
-	$json2 = pretty_print_json($text);
+	$sheet_size = $max + 1;
+
+
+	#
+	# format list of sets
+	#
+
+	$sets = array();
+	foreach ($set_masks as $k => $v){
+		$sets[] = "\t\t\t'{$k}' : {'path' : '/emoji-data/img-{$k}-64/', 'sheet' : '/emoji-data/sheet_{$k}_64.png', 'sheet_size' : 64, 'mask' : $v},";
+	}
+	$sets = implode("\n", $sets);
 
 
 	#
 	# output
 	#
 
-	$template = file_get_contents('emoji.js.template');
-	echo str_replace(array('#SHEET-SIZE#', '#DATA#', '#DATA2#'), array($sheet_size, $json, $json2), $template);
+	$template = file_get_contents($dir.'/emoji.js.template');
+
+	$map = array(
+		'#SHEET-SIZE#'	=> $sheet_size,
+		'#DATA#'	=> $json,
+		'#DATA-TEXT#'	=> $json_text,
+		'#DATA-VARS#'	=> $json_vars,
+		'#SETS#'	=> $sets,
+		'#OBS-MAP#'	=> $obs_map,
+	);
+
+	echo str_replace(array_keys($map), array_values($map), $template);
 
 
 	#
@@ -119,4 +240,12 @@
 		}
 		$buffer = substr($buffer, 0, -2)."\n{$pad}}";
 		return $buffer;
+	}
+
+	function calc_img_has($row){
+		$has_imgs_bits = 0;
+		foreach ($GLOBALS['set_masks'] as $k => $v){
+			if ($row['has_img_'.$k]) $has_imgs_bits |= $v;
+		}
+		return $has_imgs_bits;
 	}
